@@ -14,11 +14,29 @@ exports.getTasks = async (req, res) => {
     const board = await checkBoardAccess(boardId, req.user._id);
     if (!board) return res.status(403).json({ message: 'Access denied' });
 
-    const tasks = await Task.find({ board: boardId, isArchived: false })
-      .populate('assignees', 'name email avatar')
-      .populate('createdBy', 'name email')
-      .sort({ order: 1, createdAt: -1 });
-    res.json(tasks);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip = (page - 1) * limit;
+
+    const [tasks, total] = await Promise.all([
+      Task.find({ board: boardId, isArchived: false })
+        .populate('assignees', 'name email avatar')
+        .populate('createdBy', 'name email')
+        .sort({ order: 1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      Task.countDocuments({ board: boardId, isArchived: false })
+    ]);
+
+    res.json({
+      tasks,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }

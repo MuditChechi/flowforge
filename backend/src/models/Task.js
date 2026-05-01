@@ -29,5 +29,7 @@ taskSchema.pre('save', function(next) {
   }
   next();
 });
-
+taskSchema.index({ board: 1, columnId: 1 });
+taskSchema.index({ board: 1, assignees: 1 });
+taskSchema.index({ board: 1, isArchived: 1, order: 1 });
 module.exports = mongoose.model('Task', taskSchema);
