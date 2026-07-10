@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const requireBoardRole = require('../middleware/boardRole');
 const { getBoardAnalytics, getUserAnalytics } = require('../controllers/analyticsController');
 
-router.use(auth);
-router.get('/board/:boardId', getBoardAnalytics);
-router.get('/user', getUserAnalytics);
+router.get('/board/:boardId', auth, requireBoardRole('viewer', 'member', 'admin'), getBoardAnalytics);
+router.get('/user', auth, getUserAnalytics);
 
 module.exports = router;

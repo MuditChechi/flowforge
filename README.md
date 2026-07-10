@@ -8,17 +8,19 @@ A full-stack Kanban workflow management platform built with React, Node.js, Expr
 - **User authentication** — register, login, JWT-secured
 - **Team collaboration** — invite members with role-based access (admin/member/viewer)
 - **Task management** — priorities, due dates, labels, assignees, comments
-- **Analytics dashboard** — completion rates, task distribution, 7-day activity trend
-- **Real-time updates** across the board
+- **Analytics dashboard** — completion rates, task distribution, 7-day activity trend (MongoDB aggregation pipeline)
+- **Role-based access control** — `viewer` / `member` / `admin`, enforced by middleware on every board and task route
+- **Security hardening** — Helmet headers, rate-limited auth endpoints, bcrypt hashing, leak-safe error handling
 
 ## Tech Stack
 
 | Layer | Tech |
 |---|---|
 | Frontend | React 18, Vite, Tailwind CSS, @dnd-kit, Recharts |
-| Backend | Node.js, Express.js |
-| Database | MongoDB + Mongoose |
+| Backend | Node.js, Express.js, Helmet, express-rate-limit |
+| Database | MongoDB + Mongoose (compound indexes, aggregation) |
 | Auth | JWT (jsonwebtoken + bcryptjs) |
+| Testing | Jest + Supertest + mongodb-memory-server |
 | Deployment | Vercel (frontend) + Railway (backend) + MongoDB Atlas |
 
 ---
@@ -53,6 +55,12 @@ cp .env.example .env
 # VITE_API_URL=http://localhost:5000/api (already set for local)
 npm run dev
 # Runs on http://localhost:5173
+```
+
+### 4. Run the tests
+```bash
+cd backend
+npm test   # Jest + Supertest against an in-memory MongoDB
 ```
 
 ---
@@ -117,10 +125,12 @@ flowforge/
 ├── backend/
 │   ├── src/
 │   │   ├── controllers/     # authController, boardController, taskController, analyticsController
-│   │   ├── middleware/      # auth.js (JWT verification)
+│   │   ├── middleware/      # auth.js (JWT), boardRole.js (role-based access control)
 │   │   ├── models/          # User, Board, Task
 │   │   ├── routes/          # auth, boards, tasks, analytics
-│   │   └── index.js         # Express app entry point
+│   │   ├── app.js           # Express app factory (middleware + routes)
+│   │   └── index.js         # Server bootstrap (env checks + DB connect)
+│   ├── tests/               # Jest + Supertest integration tests
 │   └── package.json
 │
 └── frontend/
@@ -155,14 +165,16 @@ DELETE /api/boards/:id        Archive board
 POST   /api/boards/:id/invite Invite member by email
 ```
 
+Every board/task route is guarded by role: `viewer` (read), `member` (read + write), `admin` (full control incl. delete).
+
 ### Tasks
 ```
-GET    /api/tasks/board/:boardId    Get all tasks for board
-POST   /api/tasks/board/:boardId    Create task
-PUT    /api/tasks/:taskId           Update task
-PATCH  /api/tasks/:taskId/move      Move task (drag-drop)
-DELETE /api/tasks/:taskId           Delete task
-POST   /api/tasks/:taskId/comments  Add comment
+GET    /api/tasks/board/:boardId    Get tasks (paginated: ?page&limit)   viewer+
+POST   /api/tasks/board/:boardId    Create task                          member+
+PUT    /api/tasks/:taskId           Update task                          member+
+PATCH  /api/tasks/:taskId/move      Move task (drag-drop)                member+
+DELETE /api/tasks/:taskId           Delete task                          admin
+POST   /api/tasks/:taskId/comments  Add comment                          member+
 ```
 
 ### Analytics
@@ -175,6 +187,8 @@ GET    /api/analytics/user              User-level analytics
 
 ## Future Improvements (Roadmap)
 
+- [x] Role-based access control middleware
+- [x] Backend integration test suite
 - [ ] Real-time collaboration with Socket.io
 - [ ] File attachments on tasks
 - [ ] Board templates

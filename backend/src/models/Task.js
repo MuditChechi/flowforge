@@ -22,10 +22,18 @@ const taskSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// The "done" column marks completion. Keep `completedAt` in sync as tasks move
+// in and out of it so analytics don't count re-opened tasks as complete.
+const DONE_COLUMN = 'done';
+
 taskSchema.pre('save', function(next) {
   this.updatedAt = Date.now();
-  if (this.isModified('columnId') && this.columnId === 'done' && !this.completedAt) {
-    this.completedAt = Date.now();
+  if (this.isModified('columnId')) {
+    if (this.columnId === DONE_COLUMN && !this.completedAt) {
+      this.completedAt = Date.now();
+    } else if (this.columnId !== DONE_COLUMN && this.completedAt) {
+      this.completedAt = undefined;
+    }
   }
   next();
 });

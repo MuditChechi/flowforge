@@ -72,7 +72,7 @@ export default function BoardPage() {
 
   useEffect(() => {
     Promise.all([boardsAPI.get(id), tasksAPI.getByBoard(id)])
-      .then(([b, t]) => { setBoard(b.data); setTasks(t.data) })
+      .then(([b, t]) => { setBoard(b.data); setTasks(t.data.tasks || []) })
       .finally(() => setLoading(false))
   }, [id])
 

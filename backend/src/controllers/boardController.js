@@ -1,6 +1,9 @@
 const Board = require('../models/Board');
 const User = require('../models/User');
 
+// Board-scoped routes run through requireBoardRole, which loads and authorizes
+// the board and attaches it as `req.board`.
+
 const DEFAULT_COLUMNS = [
   { id: 'todo', title: 'To Do', color: '#64748b', order: 0 },
   { id: 'inprogress', title: 'In Progress', color: '#6366f1', order: 1 },
@@ -8,7 +11,7 @@ const DEFAULT_COLUMNS = [
   { id: 'done', title: 'Done', color: '#10b981', order: 3 }
 ];
 
-exports.getBoards = async (req, res) => {
+exports.getBoards = async (req, res, next) => {
   try {
     const boards = await Board.find({
       $or: [{ owner: req.user._id }, { 'members.user': req.user._id }],
@@ -16,17 +19,19 @@ exports.getBoards = async (req, res) => {
     }).populate('owner', 'name email').populate('members.user', 'name email');
     res.json(boards);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
-exports.createBoard = async (req, res) => {
+exports.createBoard = async (req, res, next) => {
   try {
     const { title, description, color } = req.body;
-    if (!title) return res.status(400).json({ message: 'Title required' });
+    if (!title || !title.trim()) return res.status(400).json({ message: 'Title required' });
 
     const board = new Board({
-      title, description, color: color || '#6366f1',
+      title: title.trim(),
+      description,
+      color: color || '#6366f1',
       owner: req.user._id,
       members: [{ user: req.user._id, role: 'admin' }],
       columns: DEFAULT_COLUMNS
@@ -35,35 +40,28 @@ exports.createBoard = async (req, res) => {
     await board.populate('owner', 'name email');
     res.status(201).json(board);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
-exports.getBoard = async (req, res) => {
+exports.getBoard = async (req, res, next) => {
   try {
-    const board = await Board.findById(req.params.id)
-      .populate('owner', 'name email avatar')
-      .populate('members.user', 'name email avatar');
-    if (!board) return res.status(404).json({ message: 'Board not found' });
-
-    const isMember = board.owner._id.equals(req.user._id) ||
-      board.members.some(m => m.user._id.equals(req.user._id));
-    if (!isMember) return res.status(403).json({ message: 'Access denied' });
-
-    res.json(board);
+    await req.board.populate('owner', 'name email avatar');
+    await req.board.populate('members.user', 'name email avatar');
+    res.json(req.board);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
-exports.updateBoard = async (req, res) => {
+exports.updateBoard = async (req, res, next) => {
   try {
-    const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ message: 'Board not found' });
-    if (!board.owner.equals(req.user._id)) return res.status(403).json({ message: 'Only owner can update' });
-
+    const board = req.board;
     const { title, description, color, columns } = req.body;
-    if (title) board.title = title;
+    if (title !== undefined) {
+      if (!title.trim()) return res.status(400).json({ message: 'Title cannot be empty' });
+      board.title = title.trim();
+    }
     if (description !== undefined) board.description = description;
     if (color) board.color = color;
     if (columns) board.columns = columns;
@@ -71,35 +69,37 @@ exports.updateBoard = async (req, res) => {
     await board.save();
     res.json(board);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
-exports.deleteBoard = async (req, res) => {
+exports.deleteBoard = async (req, res, next) => {
   try {
-    const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ message: 'Board not found' });
-    if (!board.owner.equals(req.user._id)) return res.status(403).json({ message: 'Only owner can delete' });
-
-    board.isArchived = true;
-    await board.save();
+    // Only the owner may delete the whole board, even among admins.
+    if (!req.board.owner.equals(req.user._id)) {
+      return res.status(403).json({ message: 'Only the owner can delete a board' });
+    }
+    req.board.isArchived = true;
+    await req.board.save();
     res.json({ message: 'Board archived' });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
 
-exports.inviteMember = async (req, res) => {
+exports.inviteMember = async (req, res, next) => {
   try {
-    const board = await Board.findById(req.params.id);
-    if (!board) return res.status(404).json({ message: 'Board not found' });
-    if (!board.owner.equals(req.user._id)) return res.status(403).json({ message: 'Only owner can invite' });
-
+    const board = req.board;
     const { email, role } = req.body;
-    const user = await User.findOne({ email });
+    if (!email) return res.status(400).json({ message: 'Email required' });
+    if (role && !['admin', 'member', 'viewer'].includes(role)) {
+      return res.status(400).json({ message: 'Invalid role' });
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase().trim() });
     if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const alreadyMember = board.members.some(m => m.user.equals(user._id));
+    const alreadyMember = board.members.some((m) => m.user.equals(user._id));
     if (alreadyMember) return res.status(400).json({ message: 'Already a member' });
 
     board.members.push({ user: user._id, role: role || 'member' });
@@ -107,6 +107,6 @@ exports.inviteMember = async (req, res) => {
     await board.populate('members.user', 'name email avatar');
     res.json(board);
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    next(err);
   }
 };
